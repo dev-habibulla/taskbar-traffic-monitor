@@ -1,0 +1,22 @@
+[package]
+name = "taskbar-monitor"
+version = "0.1.0"
+edition = "2024"
+description = "Minimal native Windows 11 taskbar system monitor (traffic, CPU, memory)"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+# Default features enable the Linux/BSD GTK AppIndicator backend; on Windows
+# they only drag in unused GTK libraries, so they are disabled.
+tray-icon = { version = "0.26.0", default-features = false }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_Com", "Win32_Security", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Graphics_Direct2D", "Win32_Graphics_Direct2D_Common", "Win32_Graphics_DirectWrite", "Win32_Graphics_Imaging", "Win32_Graphics_Dxgi_Common"] }
+windows-numerics = "0.3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
