@@ -32,95 +32,90 @@ TrafficMonitor-এর মতো ফিল, কিন্তু পুরোটা
 
 ---
 
-## লোকাল রান ও বিল্ড
+## লোকাল ইনস্টল / রান / বিল্ড
 
-নিচের ধাপগুলো পরেরবার নিজে চালাতে সুবিধা হবে বলে ধাপে ধাপে লিখে রাখলাম।
+পরেরবার আবার সেটআপ করতে লাগলে এই ধাপগুলো ফলো করো।  
+`target/` এবং Cargo ক্যাশ গিটে যায় না — জায়গা বাঁচাতে লোকালে মুছে রাখা যায়; দরকার হলে নিচের কমান্ড দিয়ে আবার তৈরি হবে।
 
-### ১) যা লাগবে আগে
+### ১) যা লাগবে আগে (একবার ইনস্টল)
 
 | জিনিস | কেন |
 | ----- | --- |
 | **Windows 10/11** | অ্যাপটা Win32 / Direct2D ভিত্তিক — অন্য OS-এ চলবে না |
 | **Rust (stable)** | `rustup` দিয়ে ইনস্টল: https://rustup.rs |
-| **MSVC Build Tools** | `cargo build` লিংকের সময় Visual C++ toolchain লাগে (Visual Studio Installer → “Desktop development with C++”, অথবা Build Tools) |
-
-চেক করতে টার্মিনালে:
+| **MSVC Build Tools** | Visual Studio Installer → “Desktop development with C++” (অথবা Build Tools) |
 
 ```powershell
-# Rust ইনস্টল আছে কিনা
+# Rust ইনস্টল চেক
 rustc --version
 cargo --version
-
-# MSVC টুলচেইন দেখতে (Windows-এ সাধারণত এটাই ডিফল্ট)
 rustup show
 ```
 
-### ২) প্রজেক্ট ফোল্ডারে যাও
+Rust না থাকলে:
 
 ```powershell
-# রিপো ক্লোন করে থাকলে, সেই ফোল্ডারে ঢুকো
-cd path\to\taskbar-monitor
+# https://rustup.rs থেকে rustup-init.exe চালাও, অথবা:
+winget install Rustlang.Rustup
 ```
 
-### ৩) ডেভেলপমেন্ট মোডে রান (লোকাল টেস্ট)
-
-ডিবাগ বিল্ড — দ্রুত কম্পাইল, কনসোলে লগ থাকে। প্রতিদিনের টেস্টের জন্য এটাই সুবিধাজনক।
+### ২) সোর্স নাও + প্রজেক্টে ঢুকো
 
 ```powershell
-# প্রথমবার ডিপেন্ডেন্সি ডাউনলোড + কম্পাইল একটু সময় নিতে পারে
+git clone https://github.com/dev-habibulla/taskbar-traffic-monitor.git
+cd taskbar-traffic-monitor
+```
+
+আগেই ক্লোন করা থাকলে শুধু:
+
+```powershell
+cd path\to\taskbar-monitor
+git pull
+```
+
+### ৩) আবার বিল্ড / ইনস্টল (ক্যাশ মুছে থাকলেও)
+
+প্রথমবার (বা `target/` মুছে দিলে) ডিপেন্ডেন্সি ডাউনলোড + কম্পাইল সময় নিতে পারে।
+
+```powershell
+# ডেভ টেস্ট — দ্রুত কম্পাইল, কনসোল লগ থাকে
 cargo run
 
-# শুধু বিল্ড করতে চাইলে (এক্সিকিউটেবল রান হবে না):
+# শুধু ডিবাগ বিল্ড
 cargo build
+# exe: .\target\debug\taskbar-monitor.exe
 
-# ডিবাগ exe এখানে থাকে:
-#   .\target\debug\taskbar-monitor.exe
-```
-
-আলাদা করে exe চালাতে:
-
-```powershell
-.\target\debug\taskbar-monitor.exe
-```
-
-### ৪) রিলিজ বিল্ড (ছোট, ফাস্ট বাইনারি)
-
-সাইজ/স্পিড অপটিমাইজড প্রোফাইল (`Cargo.toml`-এ `opt-level = "z"`, LTO, strip)।  
-বন্ধুকে দিয়ে টেস্ট বা নিজে রোজ ব্যবহার — এটাই ব্যবহার করো।
-
-```powershell
-# রিলিজ বিল্ড
+# রোজ ব্যবহার / ছোট বাইনারি (~348 KB)
 cargo build --release
-
-# বিল্ড শেষে চালাও
 .\target\release\taskbar-monitor.exe
-```
 
-শুধু এক কমান্ডে বিল্ড + রান:
-
-```powershell
+# এক কমান্ডে রিলিজ বিল্ড + রান
 cargo run --release
 ```
 
-### ৫) টেস্ট চালানো
+### ৪) টেস্ট
 
 ```powershell
 cargo test
 ```
 
-কিছু টেস্ট লাইভ সিস্টেম (taskbar, নেটওয়ার্ক, রেজিস্ট্রি স্যান্ডবক্স) ছোঁয় — তাই Windows মেশিনে চালানোই ভালো।
+### ৫) ডিস্ক খালি রাখতে (অপ্রয়োজনীয় বিল্ড ফাইল)
 
-### ৬) ক্লিন বিল্ড (সমস্যা হলে)
-
-কখনো অদ্ভুত কম্পাইল এরর হলে:
+বিল্ড শেষে / অ্যাপ ইনস্টল হয়ে গেলে `target/` রাখার দরকার নেই — কয়েকশো MB থেকে কয়েক GB পর্যন্ত ফুলে যেতে পারে।
 
 ```powershell
-# target ফোল্ডার মুছে আবার বিল্ড
+# অ্যাপ বন্ধ করে তারপর:
 cargo clean
+# অথবা ফোল্ডার সরাসরি মুছো:  Remove-Item -Recurse -Force .\target
+```
+
+পরে আবার চাইলে শুধু:
+
+```powershell
 cargo build --release
 ```
 
-> নোট: `target/` ফোল্ডারটা বিশাল হতে পারে (কয়েকশো MB)। এটা গিটে যায় না (`.gitignore`-এ আছে) — লোকালেই থাকে।
+> নোট: `target/` গিটে কমিট হয় না (`.gitignore`)। সোর্স (`src/`, `Cargo.toml`, `Cargo.lock`, `README`) রাখলেই যথেষ্ট।
 
 ---
 
