@@ -1,177 +1,180 @@
 # Taskbar Monitor
 
-A minimal, native Windows 11 system monitor that draws a small two-line readout
-directly on the taskbar notification area — in the spirit of TrafficMonitor, but
-written entirely in Rust on top of the Windows API.
+Windows 11-এর taskbar-এর পাশে (notification area-র বামে) ছোট দুই লাইনের সিস্টেম মনিটর।  
+TrafficMonitor-এর মতো ফিল, কিন্তু পুরোটা Rust + native Windows API — Electron / Tauri / WebView কিছুই নেই।
 
 ```
 ↑ 835.7 KB/s   CPU 59%
 ↓  41.6 KB/s   MEM 48%
 ```
 
-- Pure **Rust** — no React, Vite, Node.js, Tauri, Electron or WebView.
-- **347 KB** release binary.
-- Text only: no background, card, border, shadow or rounded corners. The glyphs
-  are drawn straight onto the taskbar and blend with whatever is behind them.
-- Click-through: the taskbar underneath stays fully usable.
+রিলিজ বিল্ড সাধারণত ~৩৫০ KB-এর কাছাকাছি থাকে। ব্যাকগ্রাউন্ড/কার্ড/বর্ডার নেই — শুধু টেক্সট, ক্লিক-থ্রু, তাই নিচের taskbar ব্যবহার করা যায়।
 
-## Features
+## কী কী দেখায়
 
-- **Upload / Download speed** with automatic unit selection (`B/s → KB/s → MB/s → GB/s → TB/s`).
-- **CPU** usage and **Memory** usage percentages.
-- Optional **Total Traffic** (bytes transferred this session), off by default.
-- Every metric can be enabled/disabled independently; disabled items leave no
-  blank space (the layout compacts itself).
-- **System tray** icon with a right-click menu.
-- **Start with Windows** (per-user `Run` key, no admin rights needed).
-- Follows the Windows **Light / Dark** theme automatically.
-- **DPI aware** (100/125/150/175%…) and handles multi-monitor setups, taskbar
-  position changes and taskbar auto-hide.
+- Upload / Download speed (ইউনিট অটো: `B/s` → `KB/s` → `MB/s` …)
+- CPU % এবং Memory %
+- চাইলে Total Traffic (এই সেশনের মোট বাইট) — ডিফল্টে বন্ধ
+- প্রতিটা মেট্রিক আলাদা করে চালু/বন্ধ করা যায়; বন্ধ করলে খালি জায়গা থাকে না
+- System tray আইকন + রাইট-ক্লিক মেনু
+- Windows-এর সাথে স্টার্ট (HKCU `Run` — admin লাগে না)
+- Light / Dark থিম ফলো করে
+- DPI + মাল্টি-মনিটর / taskbar মুভ / auto-hide হ্যান্ডল করে
 
-## How the taskbar placement works
+---
 
-Windows 11 removed deskbands, so an in-taskbar "band" is not possible. The
-monitor is instead a **transparent, click-through, topmost overlay window**
-anchored immediately to the left of the notification area (`TrayNotifyWnd`
-inside `Shell_TrayWnd`). It is:
+## লোকাল রান ও বিল্ড
 
-- `WS_EX_LAYERED` with per-pixel alpha (via `UpdateLayeredWindow`), so only the
-  glyphs are ever painted — never a background.
-- `WS_EX_TRANSPARENT` + `HTTRANSPARENT`, so mouse input passes through to the
-  taskbar.
-- `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST`, so it never appears in
-  Alt+Tab and never steals focus.
+নিচের ধাপগুলো পরেরবার নিজে চালাতে সুবিধা হবে বলে ধাপে ধাপে লিখে রাখলাম।
 
-The text is rendered with **DirectWrite** (Segoe UI Variable Text, regular
-weight, sized to match the taskbar clock) and the thin up/down arrows with
-**Direct2D**, composited into a WIC bitmap with premultiplied alpha and uploaded
-to the layered window via `UpdateLayeredWindow`. No Unicode arrow glyphs are
-used — the arrows are custom thin, anti-aliased strokes, so their shape and
-weight stay under our control and every metric shares one colour family.
+### ১) যা লাগবে আগে
 
-The layout is built from four independent metric groups (upload, download, CPU,
-memory), with a consistent tight gap inside each group and a wider gap between
-groups. Numeric columns reserve a fixed width so the widget does not jitter as
-values change.
+| জিনিস | কেন |
+| ----- | --- |
+| **Windows 10/11** | অ্যাপটা Win32 / Direct2D ভিত্তিক — অন্য OS-এ চলবে না |
+| **Rust (stable)** | `rustup` দিয়ে ইনস্টল: https://rustup.rs |
+| **MSVC Build Tools** | `cargo build` লিংকের সময় Visual C++ toolchain লাগে (Visual Studio Installer → “Desktop development with C++”, অথবা Build Tools) |
 
-### Lifecycle & self-healing
-
-The overlay is deliberately treated as a **disposable render surface**. A stable,
-hidden controller window owns the application lifetime, the tray, the worker and
-the overlay:
-
-- the worker and the settings window post to the **controller**, never to the
-  overlay, so a lost overlay cannot break them;
-- every render verifies the window's *real* state (`IsWindowVisible` /
-  `IsIconic`) and re-asserts topmost z-order, instead of trusting a cached flag —
-  so a hide or z-order demotion by Windows is corrected automatically;
-- if the overlay window is destroyed by the OS, the controller recreates it;
-- a 2-second health timer plus `WM_SETTINGCHANGE`, `WM_DISPLAYCHANGE`,
-  `WM_DPICHANGED`, `WM_DEVICECHANGE`, `WM_POWERBROADCAST` and the
-  `TaskbarCreated` message (Explorer restart) trigger surface invalidation and
-  re-anchoring.
-
-The monitor therefore stays visible for the whole application lifetime unless
-the user explicitly chooses **Hide Taskbar Monitor**; an explicit hide is never
-overridden. A per-user named mutex enforces a single instance.
-
-## Architecture
-
-```
-src/
-├── main.rs              Process bootstrap + single-instance guard
-├── app.rs               Application controller: tray/worker/overlay lifetime,
-│                        message loop, TaskbarCreated + self-healing recovery
-├── format.rs            Byte-rate / total / percent formatting (auto units)
-├── util.rs              Wide-string + debug-logging helpers
-├── monitor/
-│   ├── mod.rs           Metrics snapshot + sampler orchestration
-│   ├── cpu.rs           GetSystemTimes (kernel/user/idle deltas)
-│   ├── memory.rs        GlobalMemoryStatusEx
-│   └── network.rs       GetIfTable2, per-interface speed meter + session totals
-├── taskbar/
-│   ├── mod.rs           Taskbar/tray discovery, DPI scaling, placement geometry
-│   └── display.rs       Transparent overlay window: Direct2D/DirectWrite engine
-├── tray/
-│   ├── mod.rs           Tray icon + event pump
-│   └── menu.rs          Context menu and command mapping
-├── settings/
-│   ├── mod.rs
-│   ├── config.rs        Settings model and defaults
-│   └── storage.rs       JSON persistence in %APPDATA%\TaskbarMonitor
-├── startup/
-│   └── windows.rs       HKCU Run-key autostart
-└── ui/
-    └── settings.rs      Native DPI-aware settings window
-```
-
-**Threading** — exactly two threads:
-
-1. The **UI thread** owns the controller window, the overlay, the settings
-   window, the tray icon and the Win32 message loop. It only repaints when woken
-   by a posted message or the health timer — it never busy-polls.
-2. A single **sampler thread** samples CPU/memory/network at the configured
-   interval, stores the snapshot under a mutex and wakes the controller with
-   `PostMessage(WM_APP_UPDATE)`. It sleeps in short slices so shutdown is
-   immediate.
-
-No busy-waiting, no per-metric timers, no extra threads.
-
-## Settings
-
-Stored at `%APPDATA%\TaskbarMonitor\config.json` and applied immediately when
-changed. Defaults:
-
-| Setting              | Default |
-| -------------------- | ------- |
-| Upload Speed         | on      |
-| Download Speed       | on      |
-| CPU                  | on      |
-| Memory               | on      |
-| Total Traffic        | off     |
-| Update interval      | 1000 ms |
-| Theme                | System  |
-| Start with Windows   | on      |
-| Start minimized      | on      |
-
-The tray right-click menu offers: **Show Taskbar Monitor**, **Hide Taskbar
-Monitor**, **Settings**, **Pause Monitoring**, **Start with Windows** and
-**Exit**. Closing the settings window only closes the window — monitoring keeps
-running in the background.
-
-## Build & run
-
-Requires the Rust stable toolchain with the MSVC target and the Visual Studio
-C++ build tools.
+চেক করতে টার্মিনালে:
 
 ```powershell
+# Rust ইনস্টল আছে কিনা
+rustc --version
+cargo --version
+
+# MSVC টুলচেইন দেখতে (Windows-এ সাধারণত এটাই ডিফল্ট)
+rustup show
+```
+
+### ২) প্রজেক্ট ফোল্ডারে যাও
+
+```powershell
+# রিপো ক্লোন করে থাকলে, সেই ফোল্ডারে ঢুকো
+cd path\to\taskbar-monitor
+```
+
+### ৩) ডেভেলপমেন্ট মোডে রান (লোকাল টেস্ট)
+
+ডিবাগ বিল্ড — দ্রুত কম্পাইল, কনসোলে লগ থাকে। প্রতিদিনের টেস্টের জন্য এটাই সুবিধাজনক।
+
+```powershell
+# প্রথমবার ডিপেন্ডেন্সি ডাউনলোড + কম্পাইল একটু সময় নিতে পারে
+cargo run
+
+# শুধু বিল্ড করতে চাইলে (এক্সিকিউটেবল রান হবে না):
+cargo build
+
+# ডিবাগ exe এখানে থাকে:
+#   .\target\debug\taskbar-monitor.exe
+```
+
+আলাদা করে exe চালাতে:
+
+```powershell
+.\target\debug\taskbar-monitor.exe
+```
+
+### ৪) রিলিজ বিল্ড (ছোট, ফাস্ট বাইনারি)
+
+সাইজ/স্পিড অপটিমাইজড প্রোফাইল (`Cargo.toml`-এ `opt-level = "z"`, LTO, strip)।  
+বন্ধুকে দিয়ে টেস্ট বা নিজে রোজ ব্যবহার — এটাই ব্যবহার করো।
+
+```powershell
+# রিলিজ বিল্ড
 cargo build --release
+
+# বিল্ড শেষে চালাও
 .\target\release\taskbar-monitor.exe
 ```
 
-The release profile is tuned for size (`opt-level = "z"`, LTO, `panic = "abort"`,
-stripped). Debug builds keep a console for logs.
+শুধু এক কমান্ডে বিল্ড + রান:
 
-## Tests
+```powershell
+cargo run --release
+```
+
+### ৫) টেস্ট চালানো
 
 ```powershell
 cargo test
 ```
 
-56 unit tests cover CPU/RAM percentages, upload/download rate maths (including
-interface resets, appearing/disappearing interfaces, adapter reconnect and the
-first-sample case), unit conversion, layout compaction for enabled/disabled
-metrics and Total Traffic, the overlay visibility policy, light/dark theme
-resolution, DPI scaling, taskbar edge/auto-hide geometry, settings persistence
-and corrupt-file recovery, the autostart registry round-trip (against a sandbox
-key), single-instance detection and the tray command mapping. A few tests also
-exercise the live system (real taskbar discovery, theme registry, network
-interfaces).
+কিছু টেস্ট লাইভ সিস্টেম (taskbar, নেটওয়ার্ক, রেজিস্ট্রি স্যান্ডবক্স) ছোঁয় — তাই Windows মেশিনে চালানোই ভালো।
 
-## Notes & limitations
+### ৬) ক্লিন বিল্ড (সমস্যা হলে)
 
-- The monitor targets the **primary** taskbar, matching TrafficMonitor's default
-  behaviour. Secondary-monitor taskbars (`Shell_SecondaryTrayWnd`) are not drawn
-  on.
-- The menu and tray icon are provided by the `tray-icon` crate (which already
-  re-registers on `TaskbarCreated`); the taskbar overlay is pure Win32/Direct2D.
+কখনো অদ্ভুত কম্পাইল এরর হলে:
+
+```powershell
+# target ফোল্ডার মুছে আবার বিল্ড
+cargo clean
+cargo build --release
+```
+
+> নোট: `target/` ফোল্ডারটা বিশাল হতে পারে (কয়েকশো MB)। এটা গিটে যায় না (`.gitignore`-এ আছে) — লোকালেই থাকে।
+
+---
+
+## সেটিংস কোথায় থাকে
+
+`%APPDATA%\TaskbarMonitor\config.json`
+
+Tray → রাইট ক্লিক থেকে: Show / Hide, Settings, Pause, Start with Windows, Exit।  
+Settings উইন্ডো বন্ধ করলে মনিটরিং বন্ধ হয় না — ব্যাকগ্রাউন্ডে চলতে থাকে।
+
+ডিফল্ট দ্রুত রেফারেন্স:
+
+| Setting            | Default |
+| ------------------ | ------- |
+| Upload / Download  | on      |
+| CPU / Memory       | on      |
+| Total Traffic      | off     |
+| Update interval    | 1000 ms |
+| Theme              | System  |
+| Start with Windows | on      |
+| Start minimized    | on      |
+
+---
+
+## কীভাবে taskbar-এ বসে
+
+Windows 11-এ deskband নেই, তাই এটা আসলে taskbar-এর উপরে একটা **transparent, click-through, topmost overlay** — notification area (`TrayNotifyWnd`)-এর ঠিক বামে।
+
+- Layered window + per-pixel alpha → শুধু অক্ষর দেখা যায়
+- Click-through → মাউস নিচের taskbar-এ চলে যায়
+- Alt+Tab-এ আসে না, ফোকাস চুরি করে না
+- টেক্সট: DirectWrite · তীর: Direct2D
+
+Explorer রিস্টার্ট / ডিসপ্লে চেঞ্জ / DPI চেঞ্জ হলে নিজে থেকে আবার জায়গা ধরে নেয়। একসাথে একটাই ইনস্ট্যান্স চলে (named mutex)।
+
+---
+
+## ফোল্ডার ম্যাপ (দ্রুত ওরিয়েন্ট)
+
+```
+src/
+├── main.rs              স্টার্টআপ + সিঙ্গেল-ইনস্ট্যান্স
+├── app.rs               ট্রে / রেন্ডার / মেসেজ লুপ
+├── format.rs            স্পিড / পার্সেন্ট ফরম্যাটিং
+├── monitor/             CPU, RAM, নেটওয়ার্ক স্যাম্পল
+├── taskbar/             প্লেসমেন্ট + Direct2D/DirectWrite ওভারলে
+├── tray/                ট্রে আইকন + মেনু
+├── settings/            কনফিগ মডেল + %APPDATA% সেভ
+├── startup/             Windows Run-key অটোস্টার্ট
+└── ui/                  সেটিংস উইন্ডো
+```
+
+দুই থ্রেড: UI থ্রেড (উইন্ডো/ট্রে/মেসেজ লুপ) + একটা স্যাম্পলার থ্রেড। Busy-poll নেই।
+
+---
+
+## সীমাবদ্ধতা
+
+- প্রাইমারি taskbar টার্গেট — সেকেন্ডারি মনিটরের taskbar এখনো ড্র করে না
+- Tray মেনু `tray-icon` ক্রেট দিয়ে; ওভারলেটা নিজেদের Win32/Direct2D কোড
+
+---
+
+## লাইসেন্স
+
+MIT
