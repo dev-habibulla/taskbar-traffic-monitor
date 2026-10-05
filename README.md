@@ -10,6 +10,15 @@ TrafficMonitor-এর মতো ফিল, কিন্তু পুরোটা
 
 রিলিজ বিল্ড সাধারণত ~৩৫০ KB-এর কাছাকাছি থাকে। ব্যাকগ্রাউন্ড/কার্ড/বর্ডার নেই — শুধু টেক্সট, ক্লিক-থ্রু, তাই নিচের taskbar ব্যবহার করা যায়।
 
+## Download
+
+বিল্ড করতে না চাইলে সরাসরি exe নাও (Windows x64, ~348 KB):
+
+- **Latest:** [taskbar-monitor.exe](https://github.com/dev-habibulla/taskbar-traffic-monitor/releases/latest/download/taskbar-monitor.exe)
+- সব ভার্সন: [Releases](https://github.com/dev-habibulla/taskbar-traffic-monitor/releases)
+
+ডাউনলোড করে ডাবল-ক্লিক করলেই চলবে (tray আইকন + taskbar overlay)।
+
 ## কী কী দেখায়
 
 - Upload / Download speed (ইউনিট অটো: `B/s` → `KB/s` → `MB/s` …)
